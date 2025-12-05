@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="graphiql.css" />
+    <title>GraphiQL - GraphQL IDE</title>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>GraphiQL Playground</h1>
+        <p>
+          Execute GraphQL queries against your API. Edit the query and
+          variables, then click Execute.
+        </p>
+      </div>
+
+      <div class="grid">
+        <div class="query-section">
+          <div class="section-title">Query Editor</div>
+          <textarea
+            id="queryInput"
+            placeholder="Enter your GraphQL query here..."
+          >
+{
+  user(id: "1") {
+    id
+    name
+    email
+  }
+}</textarea
+          >
+
+          <div class="section-title">Query Variables (JSON)</div>
+          <textarea id="variablesInput" placeholder='{"id": "1"}'>{}</textarea>
+
+          <div class="button-group">
+            <button id="executeBtn">
+              <span>🚀 Execute Query</span>
+            </button>
+            <button id="clearBtn">
+              <span>🗑️ Clear</span>
+            </button>
+          </div>
+
+          <div class="examples">
+            <h3>Example Queries:</h3>
+            <button
+              class="example-btn"
+              data-query="query GetUser($id: ID!) {
+  user(id: $id) {
+    id
+    name
+    email
+  }
+}"
+              data-variables='{"id": "1"}'
+            >
+              Get User by ID
+            </button>
+
+            <button
+              class="example-btn"
+              data-query="query {
+  users {
+    id
+    name
+    email
+  }
+}"
+            >
+              Get All Users
+            </button>
+
+            <button
+              class="example-btn"
+              data-query="mutation CreateUser($name: String!, $email: String!) {
+  createUser(name: $name, email: $email) {
+    id
+    name
+    email
+  }
+}"
+              data-variables='{"name": "New User", "email": "newuser@example.com"}'
+            >
+              Create User
+            </button>
+          </div>
+
+          <div id="status" class="status"></div>
+        </div>
+
+        <div class="result-section">
+          <div class="section-title">Results</div>
+          <pre id="result">// Results will appear here...</pre>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>
+          GraphQL endpoint: <code>/graphql</code> | Server running on port
+          <span id="port">3000</span>
+        </p>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        const queryInput = document.getElementById("queryInput");
+        const variablesInput = document.getElementById("variablesInput");
+        const executeBtn = document.getElementById("executeBtn");
+        const clearBtn = document.getElementById("clearBtn");
+        const resultElement = document.getElementById("result");
+        const statusElement = document.getElementById("status");
+        const exampleButtons = document.querySelectorAll(".example-btn");
+        const portElement = document.getElementById("port");
+
+        // Mostrar puerto actual
+        portElement.textContent = window.location.port || "3000";
+
+        // Formatear JSON
+        function formatJSON(json) {
+          try {
+            const parsed = JSON.parse(json);
+            return JSON.stringify(parsed, null, 2);
+          } catch {
+            return json;
+          }
+        }
+
+        // Formatear resultado
+        function formatResult(data) {
+          try {
+            const parsed = typeof data === "string" ? JSON.parse(data) : data;
+            return JSON.stringify(parsed, null, 2);
+          } catch {
+            return data;
+          }
+        }
+
+        // Mostrar estado
+        function showStatus(message, type = "success") {
+          statusElement.textContent = message;
+          statusElement.className = "status " + type;
+          setTimeout(() => {
+            statusElement.className = "status";
+          }, 5000);
+        }
+
+        // Ejecutar query
+        async function executeQuery() {
+          const query = queryInput.value.trim();
+          if (!query) {
+            showStatus("Please enter a GraphQL query", "error");
+            return;
+          }
+
+          let variables = {};
+          try {
+            const variablesText = variablesInput.value.trim();
+            if (variablesText) {
+              variables = JSON.parse(variablesText);
+            }
+          } catch (error) {
+            showStatus("Invalid JSON in variables: " + error.message, "error");
+            return;
+          }
+
+          executeBtn.disabled = true;
+          executeBtn.innerHTML = "<span>⏳ Executing...</span>";
+
+          try {
+            const response = await fetch("/graphql", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                query,
+                variables,
+              }),
+            });
+
+            const result = await response.json();
+
+            if (result.errors) {
+              resultElement.textContent = formatResult({
+                errors: result.errors,
+              });
+              showStatus("Query executed with errors", "error");
+            } else {
+              resultElement.textContent = formatResult(result.data);
+              const responseTime = response.headers.get("x-response-time");
+              showStatus(
+                `Query executed successfully${
+                  responseTime ? " in " + responseTime : ""
+                }`
+              );
+            }
+          } catch (error) {
+            resultElement.textContent = formatResult({
+              error: "Network error: " + error.message,
+            });
+            showStatus("Network error: " + error.message, "error");
+          } finally {
+            executeBtn.disabled = false;
+            executeBtn.innerHTML = "<span>🚀 Execute Query</span>";
+          }
+        }
+
+        // Limpiar campos
+        function clearFields() {
+          queryInput.value = "";
+          variablesInput.value = "{}";
+          resultElement.textContent = "// Results will appear here...";
+          statusElement.className = "status";
+        }
+
+        // Cargar ejemplo
+        function loadExample(query, variables) {
+          queryInput.value = query;
+          variablesInput.value = formatJSON(variables || "{}");
+          showStatus('Example loaded. Click "Execute Query" to run it.');
+        }
+
+        // Event listeners
+        executeBtn.addEventListener("click", executeQuery);
+
+        clearBtn.addEventListener("click", clearFields);
+
+        // Ejemplos
+        exampleButtons.forEach((button) => {
+          button.addEventListener("click", () => {
+            const query = button.getAttribute("data-query");
+            const variables = button.getAttribute("data-variables");
+            loadExample(query, variables);
+          });
+        });
+
+        // Tecla Ctrl+Enter para ejecutar
+        queryInput.addEventListener("keydown", (e) => {
+          if (e.ctrlKey && e.key === "Enter") {
+            executeQuery();
+          }
+        });
+
+        // Variables input formatting
+        variablesInput.addEventListener("blur", function () {
+          if (this.value.trim()) {
+            try {
+              this.value = formatJSON(this.value);
+            } catch (error) {
+              // Mantener el valor original si no es JSON válido
+            }
+          }
+        });
+
+        // Auto-expand textareas
+        [queryInput, variablesInput].forEach((textarea) => {
+          textarea.addEventListener("input", function () {
+            this.style.height = "auto";
+            this.style.height = this.scrollHeight + "px";
+          });
+
+          // Trigger initial resize
+          textarea.dispatchEvent(new Event("input"));
+        });
+
+        console.log(
+          "GraphiQL interface ready! Try executing the example query."
+        );
+      });
+    </script>
+  </body>
+</html>
